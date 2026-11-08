@@ -1,122 +1,78 @@
-# Active Directory Help Desk Lab
+# Active Directory Help Desk Lab — Built From Scratch, Documented Step by Step
 
-A hands-on AD lab I built from scratch to practice real IT Support / Help Desk workflows — domain setup, automated user onboarding, access control, and GPO hardening.
+A hands-on AD lab for a fictional 2-department, 6-user company (`lab.local`):
+domain + DNS deployment, CSV-driven PowerShell onboarding automation, security
+groups, OU structure, NTFS/share permissions, and GPO hardening — mapped to
+CIS Controls v8, with every step screenshotted.
 
----
+![PowerShell user creation script running](screenshots/07-powershell-user-creation-script.png)
 
-## Why I built this
+![Active Directory](https://img.shields.io/badge/Active_Directory-lab.local-0078D4?logo=windows&logoColor=white)
+![PowerShell](https://img.shields.io/badge/PowerShell-automation-5391FE?logo=powershell&logoColor=white)
+![GPO](https://img.shields.io/badge/GPO-hardening-E5A13D)
+![CIS](https://img.shields.io/badge/CIS_Controls-v8_mapped-34C77B)
 
-I wanted something more solid than "I followed a YouTube tutorial" for my portfolio. So I set up a small company scenario (2 departments, 6 users) and documented every step.
+**Host:** Windows Server 2025 (Eval) on VirtualBox · **Net:** NAT + isolated
+internal segment `adlab` (192.168.50.0/24) · **DC:** 192.168.50.10, DNS 127.0.0.1
 
-**What this covers:**
-- AD DS deployment and configuration
-- PowerShell automation for creating users (CSV-driven)
-- Security groups, OU structure, GPOs
-- NTFS vs Share permissions (defense in depth)
-- Static IP / DNS for Domain Controllers
-- GPO for USB storage restriction
-- Mapped to CIS Controls v8
+## What it covers
 
----
+- AD DS deployment + promotion to DC (`lab.local`), DNS forward/reverse zones
+- PowerShell user onboarding from CSV (temp password once, force change at
+  first logon, per-user error handling) — [`scripts/Create-Users.ps1`](scripts/Create-Users.ps1)
+- OUs (IT, RRHH), security groups (`IT-Support`, `RRHH-Team`)
+- Defense in depth: NTFS Modify + SMB Full Control on `RRHH-Docs`
+  (effective = most restrictive = NTFS)
+- GPO disabling USB **storage** on RRHH OU via `UsbStor` driver
+  (Start=4) — keyboards/mice unaffected
+- Static IP without gateway via `New-NetIPAddress` (`sconfig` can't do blank gateway)
 
-## Setup
+## Lab walkthrough (14 screenshots)
 
-**Host:** Windows Server 2025 Standard (Evaluation) on VirtualBox  
-**Network:** Dual adapter — NAT for internet, Internal Network (`adlab`, 192.168.50.0/24) for domain traffic  
-**DC static IP:** `192.168.50.10/24`, no gateway (isolated segment), DNS `127.0.0.1`
+Full narrated walkthrough: [`screenshots/README.md`](screenshots/README.md).
+Network topology: [`network-diagrams/`](network-diagrams/).
 
-> The dual network setup keeps lab traffic off my host's real network. If I misconfigure something, it stays inside the VM.
+| # | Step | # | Step |
+|---|---|---|---|
+| 01 | Static IP via PowerShell | 08 | Script execution policy fix |
+| 02 | Installing AD DS role | 09 | Security groups |
+| 03 | Promoted to DC (`lab.local`) | 10 | Users added to groups |
+| 04–05 | IT + RRHH OUs | 11 | DNS config |
+| 06 | Users CSV (automation input) | 12–13 | NTFS + SMB share |
+| 07 | PowerShell batch creation | 14 | GPO USB-storage block |
 
-**One annoying thing:** `sconfig` wouldn't let me set a static IP without a gateway (it sees blank input as "cancel"). Fixed it via PowerShell with `New-NetIPAddress` — much cleaner.
+## Reproduce it
 
----
+1. VirtualBox VM: Windows Server 2025 (Eval), adapters NAT + Internal (`adlab`).
+2. Static IP: `New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.50.10 -PrefixLength 24`
+   + `Set-DnsClientServerAddress ... -ServerAddresses 127.0.0.1`.
+3. `Install-WindowsFeature AD-Domain-Services -IncludeManagementTools`
+   → `Install-ADDSForest -DomainName "lab.local"`.
+4. Run [`scripts/Create-Users.ps1`](scripts/Create-Users.ps1) with
+   [`users.csv`](scripts/users.csv) (6 users, 2 departments).
+5. Groups, permissions, GPO as shown in the screenshots.
 
-## What I did (with screenshots)
+## Security notes (CIS v8)
 
-Each step has a screenshot in [`screenshots/`](./screenshots/) with a short explanation.
+- **CIS 4 (Secure Config):** USB-storage GPO on RRHH OU.
+- **CIS 6 (Access Control):** two-layer share permissions, ceiling enforced at NTFS.
 
-| # | Step |
-|---|------|
-| 01 | **Static IP** — Set 192.168.50.10/24, DNS 127.0.0.1 via PowerShell |
-| 02 | **Installing AD DS** — Role installation in Server Manager |
-| 03 | **Promoted to DC** — New forest root for `lab.local` |
-| 04 | **IT OU** — Created OU for IT department |
-| 05 | **RRHH OU** — Created OU for HR |
-| 06 | **Users CSV** — Employee data file that feeds the automation |
-| 07 | **PowerShell user creation** — Script running, creating users in batch |
-| 08 | **Script execution policy** — Had to allow local PS scripts |
-| 09 | **Security groups** — Created IT-Support and RRHH-Team |
-| 10 | **Users added to groups** — Membership assigned |
-| 11 | **DNS config** — Forward/reverse lookup zones |
-| 12 | **NTFS permissions** — Modify for RRHH-Team on RRHH-Docs |
-| 13 | **SMB share** — Network share with access controls |
-| 14 | **GPO USB block** — Policy disabling storage on RRHH OU |
+Roadmap: domain-join a Windows client → simulate help-desk tickets
+(lockout, transfer, offboarding) → track in Jira. Core lab is complete.
 
----
-
-## Security notes (CIS Controls)
-
-This project maps to CIS Controls v8:
-
-**CIS 4 — Secure Configuration:** GPO that disables USB storage on the RRHH OU. It targets the `UsbStor` driver (Start = 4), so Windows detects the device but never mounts it. Keyboards and mice still work — this is specifically about storage.
-
-**CIS 6 — Access Control:** The RRHH-Docs share has two permission layers:
-- NTFS: RRHH-Team gets Modify (read/write/edit, but no permission changes)
-- Share (SMB): RRHH-Team gets Full Control
-
-The effective permission is whichever is more restrictive (NTFS). The real ceiling is set at the NTFS level.
-
----
-
-## Roadmap
-
-- [x] Domain + DNS
-- [x] OUs for IT and RRHH
-- [x] Automated user creation (PowerShell + CSV)
-- [x] Security groups
-- [x] NTFS + Share permissions
-- [x] GPO USB block
-- [ ] Join a Windows client to the domain
-- [ ] Simulate help desk tickets (account lockout, transfer, offboarding)
-- [ ] Track those in Jira for the full workflow
-
-The core is done.
-
----
-
-## How to run this yourself
-
-1. Install VirtualBox, create a VM with Windows Server 2025 (Evaluation)
-2. Two network adapters: NAT + Internal Network (`adlab`)
-3. Set static IP:
-   ```powershell
-   New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.50.10 -PrefixLength 24
-   Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses 127.0.0.1
-   ```
-4. Install AD DS and promote:
-   ```powershell
-   Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
-   Install-ADDSForest -DomainName "lab.local"
-   ```
-5. Run [`scripts/Create-Users.ps1`](./scripts/Create-Users.ps1) with [`users.csv`](./scripts/users.csv)
-6. Set up groups, permissions, and GPO as shown in the screenshots
-
----
-
-## Repo structure
+## Structure
 
 ```
-ActiveDirectory-HelpDesk-Lab/
-├── README.md
-├── screenshots/         <- Step-by-step screenshots with descriptions
-├── network-diagrams/    <- Network topology visuals
-└── scripts/             <- PowerShell + CSV for user provisioning
+├── screenshots/         <- 14 step screenshots + narrated README.md
+├── network-diagrams/    <- Topology + adapter visuals
+└── scripts/             <- Create-Users.ps1 + users.csv (6 users)
 ```
+
+## License note
+
+No `LICENSE` file in repo yet — recommend adding one (e.g. MIT) so the
+automation script is reusable.
 
 ---
 
-## Contact
-
-**Tiago Colo Ceppone**  
-colotiago8@gmail.com  
-[linkedin.com/in/tiago-colo-640057402](https://www.linkedin.com/in/tiago-colo-640057402/)
+**Tiago Colo** · colotiago8@gmail.com · [LinkedIn](https://www.linkedin.com/in/tiago-colo-640057402/)
